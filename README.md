@@ -62,7 +62,7 @@ To run it, you should provide two parameters: data_path and file_path.
 
 - `A_name`, `B_name`: Only when mode is set as 'mixed', both are effective. The default value of `A_name` is `'_real_A'` and another is `'_fake_B'`. Those images of your first dataset are named by `྾྾྾_real_A` and those images of your second dataset are named by `྾྾྾_fake_B`.
 
-<center><font size="7" color="red">For those no-reference metics, they will load second datasets! </font></center>
+<center><font size="7" color="red">Warning: For those no-reference metics, they will load second datasets! </font></center>
 
 ---
 
