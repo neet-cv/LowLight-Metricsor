@@ -1,0 +1,269 @@
+import os
+import torch
+import lpips
+import numpy as np
+import cv2 as cv
+from PIL import Image
+import torchvision
+import torch.nn as nn
+from torchvision import transforms
+import torchvision.models as models
+from NIQE import niqe
+from skimage.metrics import structural_similarity as ssim
+
+
+class Baseline(nn.Module):
+    def __init__(self):
+        super(Baseline, self).__init__()
+        self.backbone = torchvision.models.resnet50(pretrained=False)
+        fc_feature = self.backbone.fc.in_features
+        self.backbone.fc = nn.Linear(fc_feature, 1, bias=True)
+
+    def forward(self, x):
+        result = self.backbone(x)
+        return result
+
+
+class NIMA(nn.Module):
+    """Neural IMage Assessment model by Google"""
+
+    def __init__(self, base_model, num_classes=10):
+        super(NIMA, self).__init__()
+        self.features = base_model.features
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=0.75),
+            nn.Linear(in_features=25088, out_features=num_classes),
+            nn.Softmax())
+
+    def forward(self, x):
+        out = self.features(x)
+        out = out.view(out.size(0), -1)
+        out = self.classifier(out)
+        return out
+
+
+class Metrics:
+    def __init__(self, data_path, file_path, use_gpu=True if torch.cuda.is_available() else False, mode='mixed', A_name='_real_A', B_name='_fake_B'):
+        self.use_gpu = use_gpu
+        self.dict = {
+            'MAE': self.Compute_MAE(),
+            'MSE': self.Compute_MSE(),
+            'PSNR': self.Compute_PSNR(),
+            'SSIM': self.Compute_SSIM(),
+            'LPIPS': self.Compute_LPIPS(),
+            'LOE': self.Compute_LOE(),
+            'NIQE': self.Compute_NIQE(),
+            'SPAQ': self.Compute_SPAQ(),
+            'NIMA': self.Compute_NIMA()
+        }
+        self.result_paths = os.path.join(data_path)
+        self.file_path = os.path.join(file_path)
+        self.img_A_paths = []
+        self.img_B_paths = []
+        if mode == 'mixed':
+            for root, _, file_names in sorted(os.walk(self.result_paths, followlinks=True)):
+                for file_name in file_names:
+                    path = os.path.join(root, file_name)
+                    if A_name in file_name:
+                        self.img_A_paths.append(path)
+                    if B_name in file_name:
+                        self.img_B_paths.append(path)
+        elif mode == 'parted':
+            if os.path.isdir(data_path):
+                list_name = sorted(os.listdir(data_path))
+                for name in list_name:
+                    if name == list_name[0]:
+                        for file in os.path.join(data_path, name):
+                            path = os.path.join(data_path, name, file)
+                            self.img_A_paths.append(path)
+                    elif name == list_name[1]:
+                        for file in os.path.join(data_path, name):
+                            path = os.path.join(data_path, name, file)
+                            self.img_B_paths.append(path)
+
+            else:
+                print("Please input datafolders' parent directory! ")
+        else:
+            print(f"There isn't such %s mode! " % mode)
+        self.imgs_A = []
+        self.imgs_B = []
+        for img_A in self.img_A_paths:
+            self.imgs_A.append(cv.imread(img_A))
+        for img_B in self.img_B_paths:
+            self.imgs_B.append(cv.imread(img_B))
+
+    def __getitem__(self, item):
+        if item == 'All':
+            for metric in self.dict.keys():
+                self.record_results(metric, self.dict[metric])
+        else:
+            try:
+                self.record_results(item, self.dict[item])
+            except KeyError:
+                print(f"The %s metric isn't included! " % item)
+
+    def Compute_MAE(self):
+        MAEs = []
+        for img_A, img_B in zip(self.imgs_A, self.imgs_B):
+            Error = abs(img_A - img_B)
+            gray = cv.cvtColor(Error, cv.COLOR_BGR2GRAY)
+            MAEs.append(np.mean(gray))
+            # img_A_gray = cv.cvtColor(img_A, cv.COLOR_BGR2GRAY)
+            # img_B_gray = cv.cvtColor(img_B, cv.COLOR_BGR2GRAY)
+            # mae = abs(img_A_gray - img_B_gray)
+            # MAEs.append(np.mean(mae))
+        return np.mean(MAEs)
+
+    def Compute_MSE(self):
+        MSEs = []
+        for img_A, img_B in zip(self.imgs_A, self.imgs_B):
+            img_A_gray = cv.cvtColor(img_A, cv.COLOR_BGR2GRAY)
+            img_B_gray = cv.cvtColor(img_B, cv.COLOR_BGR2GRAY)
+            MSEs.append((img_A_gray - img_B_gray) ** 2)
+        return np.mean(MSEs)
+
+    def Compute_PSNR(self):
+        PSNRs = []
+        for img_A, img_B in zip(self.imgs_A, self.imgs_B):
+            PSNRs.append(cv.PSNR(img_A, img_B))
+        return np.mean(PSNRs)
+
+    def Compute_SSIM(self):
+        SSIMs = []
+        for img_A, img_B in zip(self.imgs_A, self.imgs_B):
+            img_A_gray = cv.cvtColor(img_A, cv.COLOR_BGR2GRAY)
+            img_B_gray = cv.cvtColor(img_B, cv.COLOR_BGR2GRAY)
+            SSIMs.append(ssim(img_A_gray, img_B_gray))
+        return np.mean(SSIMs)
+
+    def Compute_LPIPS(self):
+        loss_fn = lpips.LPIPS(net='alex')
+        LPIPSs = []
+        if self.use_gpu:
+            loss_fn.cuda()
+        for img_A_path, img_B_path in zip(self.img_A_paths, self.img_B_paths):
+            img_A = lpips.im2tensor(lpips.load_image(img_A_path))
+            img_B = lpips.im2tensor(lpips.load_image(img_B_path))
+            if self.use_gpu:
+                img_A = img_A.cuda()
+                img_B = img_B.cuda()
+            LPIPSs.append(float(loss_fn.forward(img_A, img_B)))
+        return np.mean(LPIPSs)
+
+    def Compute_LOE(self):
+        LOEs = []
+        for img_A, img_B in zip(self.imgs_A, self.imgs_B):
+            index_of_L_A = np.unravel_index(np.argmax(img_A), img_A.shape)
+            index_of_L_B = np.unravel_index(np.argmax(img_B), img_B.shape)
+            L_A = img_A[index_of_L_A]
+            L_B = img_B[index_of_L_B]
+            U_A = L_A >= img_A + 0
+            U_B = L_B >= img_B + 0
+            RD = U_A ^ U_B
+            LOEs.append(np.mean(RD))
+        return np.mean(LOEs)
+
+    def Compute_NIQE(self):
+        NIQEs = []
+        for img_B_path in self.img_B_paths:
+            img_B = np.array(Image.open(img_B_path).convert('LA'))[:, :, 0]
+            NIQEs.append(niqe(img_B))
+        return np.mean(NIQEs)
+
+    def Compute_SPAQ(self, size=512, input_size=224):
+        SPAQs = []
+        imgs_B = []
+        for img_B_path in self.img_B_paths:
+            img_B = Image.open(img_B_path)
+            imgs_B.append(img_B)
+        model = Baseline()
+        for img_B in imgs_B:
+            w_b, h_b = img_B.size
+            if w_b >= size or h_b >= size:
+                img_B = transforms.ToTensor()(transforms.Resize(size, Image.BILINEAR)(img_B))
+            img_B = np.transpose(img_B, (2, 1, 0))
+            img_shape_B = img_B.shape
+            if len(img_shape_B) == 2:
+                H_B, W_B, = img_shape_B
+                num_of_channel_B = 1
+            else:
+                H_B, W_B, num_of_channel_B = img_shape_B
+            if num_of_channel_B == 1:
+                img_B = np.asarray([img_B, ] * 3, dtype=img_B.dtype)
+
+            stride = int(input_size / 2)
+            hIdxMax_B = H_B - input_size
+            wIdxMax_B = W_B - input_size
+
+            hIdx_B = [i * stride for i in range(int(hIdxMax_B / stride) + 1)]
+            if H_B - input_size != hIdx_B[-1]:
+                hIdx_B.append(H_B - input_size)
+            wIdx_B = [i * stride for i in range(int(wIdxMax_B / stride) + 1)]
+            if W_B - input_size != wIdx_B[-1]:
+                wIdx_B.append(W_B - input_size)
+            img_B = img_B.numpy()
+            patches_numpy = [img_B[hId:hId + input_size, wId:wId + input_size, :]
+                             for hId in hIdx_B
+                             for wId in wIdx_B]
+            patches_tensor = [transforms.ToTensor()(p) for p in patches_numpy]
+            patches_tensor = torch.stack(patches_tensor, 0).contiguous()
+            Image_B = patches_tensor.squeeze(0)
+
+            # if use_gpu:
+            #     Image_B = Image_B.cuda()
+            #     model = model.cuda()
+            score_B = model(Image_B).mean()
+            SPAQs.append(score_B.item())
+        return np.mean(SPAQs)
+
+    def Compute_NIMA(self):
+        NIMAs = []
+        imgs_B_BGR = []
+        mean = 0.0
+        test_transform = transforms.Compose([
+            transforms.Scale(256),
+            transforms.RandomCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model_pth = os.path.join(os.getcwd(), 'lib/epoch-34.pth')
+        # test_csv = os.path.join(ROOT_PATH, 'lib/test_labels.csv')
+        for img_B in self.imgs_B:
+            imgs_B_BGR.append(cv.cvtColor(img_B, cv.COLOR_BGR2RGB))
+        base_model = models.vgg16(pretrained=True)
+        model = NIMA(base_model)
+        try:
+            model.load_state_dict(torch.load(model_pth, map_location=device))
+            print('successfully loaded model')
+        except IOError:
+            print("Model doesn't exist! ")
+            raise
+        seed = 42
+        torch.manual_seed(seed)
+        model = model.to(device)
+        model.eval()
+        for img_B in imgs_B_BGR:
+            imt_B = test_transform(img_B)
+            imt_B = imt_B.unsqueeze(dim=0)
+            imt_B = imt_B.to(device)
+            with torch.no_grad():
+                out = model(imt_B)
+            out = out.view(10, 1)
+            for j, e in enumerate(out, 1):
+                mean += j * e
+            NIMAs.append(round(mean, 3))
+        # test_df = pd.read_csv(test_csv, header=None)
+        # for i, img in enumerate(imgs_B):
+        #     print(test_df[0].shape)
+        #     gt = test_df[test_df[0] == img].to_numpy()[:, 1:].reshape(10, 1)
+        #     gt_mean = 0.0
+        #     for l, e in enumerate(gt, 1):
+        #         gt_mean += l * e
+        #     NIMAs.append(round(gt_mean, 3))
+        return np.mean(NIMAs)
+
+    def record_results(self, metric_name, metric_result):
+        with open(os.path.join(self.file_path, 'Metrics.txt')) as fp:
+            fp.write(metric_name + ': ' + str(metric_result) + '\n')
