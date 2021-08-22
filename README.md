@@ -52,7 +52,7 @@ To run it, you should provide two parameters: data_path and file_path.
 
 - data_path: the path to your data folder.
 
-- file_path: the path you want to set scores.
+- file_path: the folder path you want to set scores.
 
 - use_gpu: **The default value is True when cuda is available**, and of course it will be False when cuda isn't available. If you don't want to use gpu, then you can set it False.
 
@@ -76,3 +76,5 @@ print(MAE)
 ```
 
 Specially, you can use `metrics['All']` to record all metrics! 
+
+To use the project, you should download these models following by the [link](https://drive.google.com/drive/folders/1EWk03SfEwVHf--7G-lr6P_o6EFuAUL3G?usp=sharing) and put them in `./models/`
