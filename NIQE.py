@@ -1,18 +1,14 @@
-import scipy.misc
-import scipy.io
-from os.path import dirname
-from os.path import join
-import scipy
-import scipy.ndimage
-import numpy as np
-import scipy.special
 import math
+import numpy as np
+from PIL import Image
+from os.path import join, dirname
+from scipy import io, linalg, special, ndimage
 
 gamma_range = np.arange(0.2, 10, 0.001)
-a = scipy.special.gamma(2.0 / gamma_range)
+a = special.gamma(2.0 / gamma_range)
 a *= a
-b = scipy.special.gamma(1.0 / gamma_range)
-c = scipy.special.gamma(3.0 / gamma_range)
+b = special.gamma(1.0 / gamma_range)
+c = special.gamma(3.0 / gamma_range)
 prec_gammas = a / (b * c)
 
 
@@ -46,9 +42,9 @@ def aggd_features(imdata):
     pos = np.argmin((prec_gammas - rhat_norm) ** 2)
     alpha = gamma_range[pos]
 
-    gam1 = scipy.special.gamma(1.0 / alpha)
-    gam2 = scipy.special.gamma(2.0 / alpha)
-    gam3 = scipy.special.gamma(3.0 / alpha)
+    gam1 = special.gamma(1.0 / alpha)
+    gam2 = special.gamma(2.0 / alpha)
+    gam3 = special.gamma(3.0 / alpha)
 
     aggdratio = np.sqrt(gam1) / np.sqrt(gam3)
     bl = aggdratio * left_mean_sqrt
@@ -107,10 +103,10 @@ def compute_image_mscn_transform(image, C=1, avg_window=None, extend_mode='const
     mu_image = np.zeros((h, w), dtype=np.float32)
     var_image = np.zeros((h, w), dtype=np.float32)
     image = np.array(image).astype('float32')
-    scipy.ndimage.correlate1d(image, avg_window, 0, mu_image, mode=extend_mode)
-    scipy.ndimage.correlate1d(mu_image, avg_window, 1, mu_image, mode=extend_mode)
-    scipy.ndimage.correlate1d(image ** 2, avg_window, 0, var_image, mode=extend_mode)
-    scipy.ndimage.correlate1d(var_image, avg_window, 1, var_image, mode=extend_mode)
+    ndimage.correlate1d(image, avg_window, 0, mu_image, mode=extend_mode)
+    ndimage.correlate1d(mu_image, avg_window, 1, mu_image, mode=extend_mode)
+    ndimage.correlate1d(image ** 2, avg_window, 0, var_image, mode=extend_mode)
+    ndimage.correlate1d(var_image, avg_window, 1, var_image, mode=extend_mode)
     var_image = np.sqrt(np.abs(var_image - mu_image ** 2))
     return (image - mu_image) / (var_image + C), var_image, mu_image
 
@@ -166,7 +162,9 @@ def get_patches_generic(img, patch_size):
         img = img[:, :-woffset]
 
     img = img.astype(np.float32)
-    img2 = scipy.misc.imresize(img, 0.5, interp='bicubic', mode='F')
+    im = Image.fromarray(img)
+    size = tuple((np.array(im.size) * 0.5).astype(int))
+    img2 = np.array(im.resize(size, Image.BICUBIC))
 
     mscn1, var, mu = compute_image_mscn_transform(img)
     mscn1 = mscn1.astype(np.float32)
@@ -187,7 +185,7 @@ def niqe(inputImgData):
     module_path = dirname(__file__)
 
     # TODO: memoize
-    params = scipy.io.loadmat(join(module_path, 'data', 'lib/niqe_image_params.mat'))
+    params = io.loadmat(join(module_path, 'models/niqe_image_params.mat'))
     pop_mu = np.ravel(params["pop_mu"])
     pop_cov = params["pop_cov"]
 
@@ -205,7 +203,7 @@ def niqe(inputImgData):
 
     X = sample_mu - pop_mu
     covmat = ((pop_cov + sample_cov) / 2.0)
-    pinvmat = scipy.linalg.pinv(covmat)
+    pinvmat = linalg.pinv(covmat)
     niqe_score = np.sqrt(np.dot(np.dot(X, pinvmat), X))
 
     return niqe_score

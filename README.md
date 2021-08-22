@@ -75,4 +75,4 @@ MAE = metrics['MAE']
 print(MAE)
 ```
 
-Specially, you can use `metrics['All']` to record all metrics!
+Specially, you can use `metrics['All']` to record all metrics! 
