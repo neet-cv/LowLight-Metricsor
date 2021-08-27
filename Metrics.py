@@ -1,4 +1,4 @@
-import os
+import os, re
 import lpips
 
 import cv2 as cv
@@ -58,7 +58,7 @@ class Metrics:
             'PSNR': self.Compute_PSNR,
             'SSIM': self.Compute_SSIM,
             'LPIPS': self.Compute_LPIPS,
-            # 'LOE': self.Compute_LOE,
+            'LOE': self.Compute_LOE,
             'NIQE': self.Compute_NIQE,
             'SPAQ': self.Compute_SPAQ,
             'NIMA': self.Compute_NIMA
@@ -90,11 +90,13 @@ class Metrics:
                             self.img_B_paths.append(path)
 
             else:
-                print("Please input datafolders' parent directory! ")
+                print("Please input datafolders's parent directory! ")
         else:
             print(f"There isn't such %s mode! " % mode)
         self.imgs_A = []
         self.imgs_B = []
+        self.img_A_paths.sort(key=lambda f: [int(n) for n in re.findall(r"\d+", f)])
+        self.img_B_paths.sort(key=lambda f: [int(n) for n in re.findall(r"\d+", f)])
 
         for img_A in self.img_A_paths:
             self.imgs_A.append(cv.imread(img_A))
@@ -117,14 +119,13 @@ class Metrics:
                     res = self.dict[item.upper()]()
                     fp.write("Metrics_%d_th_experiment....\n" % i_th)
                     fp.write(item + ': ' + str(self.dict[item.upper()]()) + '\n')
-                    fp.write("=" * 128)
+                    fp.write("=" * 255)
                 return item + ": " + str(res)
             except KeyError:
                 print("The %s metric isn't included! " % item)
 
     def Compute_MAE(self):
         MAEs = []
-        # channel_sum = 0
         for img_A, img_B in zip(self.imgs_A, self.imgs_B):
             Error = np.abs(img_A - img_B)
             gray = cv.cvtColor(Error, cv.COLOR_BGR2GRAY)
@@ -167,18 +168,18 @@ class Metrics:
             LPIPSs.append(float(loss_fn(img_A, img_B)))
         return np.mean(LPIPSs)
 
-    # def Compute_LOE(self):
-    #     LOEs = []
-    #     for img_A, img_B in zip(self.imgs_A, self.imgs_B):
-    #         index_of_L_A = np.unravel_index(np.argmax(img_A), img_A.shape)
-    #         index_of_L_B = np.unravel_index(np.argmax(img_B), img_B.shape)
-    #         L_A = img_A[index_of_L_A]
-    #         L_B = img_B[index_of_L_B]
-    #         U_A = L_A >= img_A + 0
-    #         U_B = L_B >= img_B + 0
-    #         RD = U_A ^ U_B
-    #         LOEs.append(np.mean(RD))
-    #     return np.mean(LOEs)
+    def Compute_LOE(self):
+        LOEs = []
+        for img_A, img_B in zip(self.imgs_A, self.imgs_B):
+            index_of_L_A = np.unravel_index(np.argmax(img_A), img_A.shape)
+            index_of_L_B = np.unravel_index(np.argmax(img_B), img_B.shape)
+            L_A = img_A[index_of_L_A]
+            L_B = img_B[index_of_L_B]
+            U_A = L_A >= img_A + 0
+            U_B = L_B >= img_B + 0
+            RD = U_A ^ U_B
+            LOEs.append(np.mean(RD))
+        return np.mean(LOEs)
 
     def Compute_NIQE(self):
         NIQEs = []
@@ -247,7 +248,7 @@ class Metrics:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model_pth = os.path.join(os.getcwd(), 'models/epoch-34.pth')
         pretrained_path = os.path.join(os.getcwd(), 'models/vgg16-397923af.pth')
-        # test_csv = os.path.join(ROOT_PATH, 'models/test_labels.csv')
+        # test_csv = os.path.join(ROOT_PATH, 'lib/test_labels.csv')
         for img_B in self.imgs_B:
             imgs_B_BGR.append(cv.cvtColor(img_B, cv.COLOR_BGR2RGB))
         base_model = models.vgg16(pretrained=False)
