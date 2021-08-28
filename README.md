@@ -9,7 +9,6 @@ Metrics provided are these:
 - PSNR
 - SSIM
 - LPIPS
-- LOE
 - NIQE
 - SPAQ
 - NIMA
