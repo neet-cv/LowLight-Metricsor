@@ -58,7 +58,7 @@ class Metrics:
             'PSNR': self.Compute_PSNR,
             'SSIM': self.Compute_SSIM,
             'LPIPS': self.Compute_LPIPS,
-            'LOE': self.Compute_LOE,
+            # 'LOE': self.Compute_LOE,
             'NIQE': self.Compute_NIQE,
             'SPAQ': self.Compute_SPAQ,
             'NIMA': self.Compute_NIMA
@@ -168,18 +168,18 @@ class Metrics:
             LPIPSs.append(float(loss_fn(img_A, img_B)))
         return np.mean(LPIPSs)
 
-    def Compute_LOE(self):
-        LOEs = []
-        for img_A, img_B in zip(self.imgs_A, self.imgs_B):
-            index_of_L_A = np.unravel_index(np.argmax(img_A), img_A.shape)
-            index_of_L_B = np.unravel_index(np.argmax(img_B), img_B.shape)
-            L_A = img_A[index_of_L_A]
-            L_B = img_B[index_of_L_B]
-            U_A = L_A >= img_A + 0
-            U_B = L_B >= img_B + 0
-            RD = U_A ^ U_B
-            LOEs.append(np.mean(RD))
-        return np.mean(LOEs)
+    # def Compute_LOE(self):
+    #     LOEs = []
+    #     for img_A, img_B in zip(self.imgs_A, self.imgs_B):
+    #         index_of_L_A = np.unravel_index(np.argmax(img_A), img_A.shape)
+    #         index_of_L_B = np.unravel_index(np.argmax(img_B), img_B.shape)
+    #         L_A = img_A[index_of_L_A]
+    #         L_B = img_B[index_of_L_B]
+    #         U_A = L_A >= img_A + 0
+    #         U_B = L_B >= img_B + 0
+    #         RD = U_A ^ U_B
+    #         LOEs.append(np.mean(RD))
+    #     return np.mean(LOEs)
 
     def Compute_NIQE(self):
         NIQEs = []
