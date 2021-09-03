@@ -60,7 +60,7 @@ class Metrics:
             'LPIPS': self.Compute_LPIPS,
             # 'LOE': self.Compute_LOE,
             'NIQE': self.Compute_NIQE,
-            'SPAQ': self.Compute_SPAQ,
+            # 'SPAQ': self.Compute_SPAQ,
             'NIMA': self.Compute_NIMA
         }
         self.name = name
@@ -188,51 +188,51 @@ class Metrics:
             NIQEs.append(niqe(img_B))
         return np.mean(NIQEs)
 
-    def Compute_SPAQ(self, size=512, input_size=224):
-        SPAQs = []
-        imgs_B = []
-        for img_B_path in self.img_B_paths:
-            img_B = Image.open(img_B_path)
-            imgs_B.append(img_B)
-        model = Baseline()
-        for img_B in imgs_B:
-            w_b, h_b = img_B.size
-            if w_b >= size or h_b >= size:
-                img_B = transforms.ToTensor()(transforms.Resize(size, Image.BILINEAR)(img_B))
-            img_B = np.transpose(img_B, (2, 1, 0))
-            img_shape_B = img_B.shape
-            if len(img_shape_B) == 2:
-                H_B, W_B, = img_shape_B
-                num_of_channel_B = 1
-            else:
-                H_B, W_B, num_of_channel_B = img_shape_B
-            if num_of_channel_B == 1:
-                img_B = np.asarray([img_B, ] * 3, dtype=img_B.dtype)
-
-            stride = int(input_size / 2)
-            hIdxMax_B = H_B - input_size
-            wIdxMax_B = W_B - input_size
-
-            hIdx_B = [i * stride for i in range(int(hIdxMax_B / stride) + 1)]
-            if H_B - input_size != hIdx_B[-1]:
-                hIdx_B.append(H_B - input_size)
-            wIdx_B = [i * stride for i in range(int(wIdxMax_B / stride) + 1)]
-            if W_B - input_size != wIdx_B[-1]:
-                wIdx_B.append(W_B - input_size)
-            img_B = img_B.numpy()
-            patches_numpy = [img_B[hId:hId + input_size, wId:wId + input_size, :]
-                             for hId in hIdx_B
-                             for wId in wIdx_B]
-            patches_tensor = [transforms.ToTensor()(p) for p in patches_numpy]
-            patches_tensor = torch.stack(patches_tensor, 0).contiguous()
-            Image_B = patches_tensor.squeeze(0)
-
-            # if use_gpu:
-            #     Image_B = Image_B.cuda()
-            #     model = model.cuda()
-            score_B = model(Image_B).mean()
-            SPAQs.append(score_B.item())
-        return np.mean(SPAQs)
+    # def Compute_SPAQ(self, size=512, input_size=224):
+    #     SPAQs = []
+    #     imgs_B = []
+    #     for img_B_path in self.img_B_paths:
+    #         img_B = Image.open(img_B_path)
+    #         imgs_B.append(img_B)
+    #     model = Baseline()
+    #     for img_B in imgs_B:
+    #         w_b, h_b = img_B.size
+    #         if w_b >= size or h_b >= size:
+    #             img_B = transforms.ToTensor()(transforms.Resize(size, Image.BILINEAR)(img_B))
+    #         img_B = np.transpose(img_B, (2, 1, 0))
+    #         img_shape_B = img_B.shape
+    #         if len(img_shape_B) == 2:
+    #             H_B, W_B, = img_shape_B
+    #             num_of_channel_B = 1
+    #         else:
+    #             H_B, W_B, num_of_channel_B = img_shape_B
+    #         if num_of_channel_B == 1:
+    #             img_B = np.asarray([img_B, ] * 3, dtype=img_B.dtype)
+    #
+    #         stride = int(input_size / 2)
+    #         hIdxMax_B = H_B - input_size
+    #         wIdxMax_B = W_B - input_size
+    #
+    #         hIdx_B = [i * stride for i in range(int(hIdxMax_B / stride) + 1)]
+    #         if H_B - input_size != hIdx_B[-1]:
+    #             hIdx_B.append(H_B - input_size)
+    #         wIdx_B = [i * stride for i in range(int(wIdxMax_B / stride) + 1)]
+    #         if W_B - input_size != wIdx_B[-1]:
+    #             wIdx_B.append(W_B - input_size)
+    #         img_B = img_B.numpy()
+    #         patches_numpy = [img_B[hId:hId + input_size, wId:wId + input_size, :]
+    #                          for hId in hIdx_B
+    #                          for wId in wIdx_B]
+    #         patches_tensor = [transforms.ToTensor()(p) for p in patches_numpy]
+    #         patches_tensor = torch.stack(patches_tensor, 0).contiguous()
+    #         Image_B = patches_tensor.squeeze(0)
+    #
+    #         # if use_gpu:
+    #         #     Image_B = Image_B.cuda()
+    #         #     model = model.cuda()
+    #         score_B = model(Image_B).mean()
+    #         SPAQs.append(score_B.item())
+    #     return np.mean(SPAQs)
 
     def Compute_NIMA(self):
         NIMAs = []
