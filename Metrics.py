@@ -7,11 +7,12 @@ import numpy as np
 from PIL import Image
 
 from time import time
-from NIQE import niqe
+from .NIQE import niqe
 from tqdm import tqdm
 from skimage.metrics import structural_similarity as ssim
 
 import torch
+import ntpath
 import torchvision
 import torch.nn as nn
 from torchvision import transforms
@@ -54,6 +55,7 @@ class Metrics:
                  data_path: str = '',
                  A_path: str = '', B_path: str = ''):
         self.use_gpu = use_gpu
+        self.enable_2_compute = False
         self.dict = {
             'MAE': self.Compute_MAE,
             'MSE': self.Compute_MSE,
@@ -65,11 +67,47 @@ class Metrics:
             # 'SPAQ': self.Compute_SPAQ,
             'NIMA': self.Compute_NIMA
         }
+
+        model_pth = os.path.join(os.getcwd(), 'Metrics', 'models/epoch-34.pth')
+        pretrained_path = os.path.join(os.getcwd(), 'Metrics', 'models/vgg16-397923af.pth')
+        self.loss_fn = lpips.LPIPS(net='alex', pnet_rand=True, model_path=os.path.join(_root_path, "models/alexnet-owt-7be5be79.pth"))
+        if self.use_gpu:
+            self.loss_fn.cuda()
+        self.test_transform = transforms.Compose([
+            transforms.Scale(256),
+            transforms.RandomCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
+        self.device = torch.device("cuda" if self.use_gpu else "cpu")
+        base_model = models.vgg16(pretrained=False)
+        base_model.load_state_dict(torch.load(pretrained_path, map_location=self.device))
+        model = NIMA(base_model)
+        try:
+            model.load_state_dict(torch.load(model_pth, map_location=self.device))
+            print('successfully loaded model')
+        except IOError:
+            print("Model doesn't exist! ")
+            raise
+        seed = 42
+        torch.manual_seed(seed)
+        self.model = model.to(self.device)
+        self.model.eval()
+
         self.name = name
-        self.result_paths = os.path.join(data_path)
-        self.file_path = os.path.join(file_path)
+        self.result_paths = None
+        self.file_path = None
         self.img_A_paths = []
         self.img_B_paths = []
+        self.imgs_A = []
+        self.imgs_B = []
+
+    def __call__(self, mode: str = 'mixed', data_path: str = '', file_path: str = '', A_name: str = '_real_A', B_name: str = '_fake_B', A_path: str = '', B_path: str = ''):
+        self.img_A_paths = []
+        self.img_B_paths = []
+        self.imgs_A = []
+        self.imgs_B = []
         if mode == 'mixed':
             for root, _, file_names in sorted(os.walk(self.result_paths, followlinks=True)):
                 for file_name in file_names:
@@ -108,11 +146,13 @@ class Metrics:
         self.imgs_B = []
         self.img_A_paths.sort(key=lambda f: [int(n) for n in re.findall(r"\d+", f)])
         self.img_B_paths.sort(key=lambda f: [int(n) for n in re.findall(r"\d+", f)])
-
         for img_A in self.img_A_paths:
             self.imgs_A.append(cv.imread(img_A))
         for img_B in self.img_B_paths:
             self.imgs_B.append(cv.imread(img_B))
+        self.result_paths = os.path.join(data_path)
+        self.file_path = os.path.join(file_path)
+        self.enable_2_compute = True
 
         # Model init
         self.loss_fn = lpips.LPIPS(net='alex', pnet_rand=True, model_path="./models/alexnet-owt-7be5be79.pth")
@@ -198,25 +238,31 @@ class Metrics:
 
 
     def __getitem__(self, item: str):
-        i_th = len(os.listdir(self.file_path)) + 1
-        if item.lower() == 'all':
-            with open(os.path.join(self.file_path, 'Metrics_%d_th_%s.txt' % (i_th, self.name)), 'w') as fp:
-                start_time = time()
-                for metric in tqdm(self.dict.keys()):
-                    fp.write(metric + ': ' + str(self.dict[metric.upper()]()) + '\n')
-                end_time = time() - start_time
-                fp.write("Total Time: " + str(end_time))
-                return "Nothing"
+        if self.enable_2_compute:
+            i_th = len(os.listdir(self.file_path)) + 1
+            value_dict = {}
+            if item.lower() == 'all':
+                with open(os.path.join(self.file_path, 'Metrics_%d_th_%s.txt' % (i_th, self.name)), 'w') as fp:
+                    start_time = time()
+                    for metric in tqdm(self.dict.keys()):
+                        value = self.dict[metric.upper()]()
+                        fp.write(metric + ': ' + str(value) + '\n')
+                        value_dict[metric] = value
+                    end_time = time() - start_time
+                    fp.write("Total Time: " + str(end_time))
+                    return value_dict
+            else:
+                try:
+                    with open(os.path.join(self.file_path, 'Metrics.txt'), 'a') as fp:
+                        res = self.dict[item.upper()]()
+                        fp.write("Metrics_%d_th_experiment....\n" % i_th)
+                        fp.write(item + ': ' + str(self.dict[item.upper()]()) + '\n')
+                        fp.write("=" * 255)
+                    return item + ": " + str(res)
+                except KeyError:
+                    print("The %s metric isn't included! " % item)
         else:
-            try:
-                with open(os.path.join(self.file_path, 'Metrics.txt'), 'a') as fp:
-                    res = self.dict[item.upper()]()
-                    fp.write("Metrics_%d_th_experiment....\n" % i_th)
-                    fp.write(item + ': ' + str(self.dict[item.upper()]()) + '\n')
-                    fp.write("=" * 255)
-                return item + ": " + str(res)
-            except KeyError:
-                print("The %s metric isn't included! " % item)
+            print("Please set A_dataset and B_dataset! ")
 
     def Compute_MAE(self):
         MAEs = []
