@@ -1,5 +1,6 @@
 import os, re
 import lpips
+import filetype
 
 import cv2 as cv
 import numpy as np
@@ -48,9 +49,10 @@ class NIMA(nn.Module):
 
 
 class Metrics:
-    def __init__(self, data_path, file_path, use_gpu=True if torch.cuda.is_available() else False, mode='mixed',
-                 name="Metrics",
-                 A_name='_real_A', B_name='_fake_B'):
+    def __init__(self, mode: str, file_path: str, name: str = "Metrics", use_gpu: bool = True if torch.cuda.is_available() else False,
+                 A_name: str = '_real_A', B_name: str = '_fake_B',
+                 data_path: str = '',
+                 A_path: str = '', B_path: str = ''):
         self.use_gpu = use_gpu
         self.dict = {
             'MAE': self.Compute_MAE,
@@ -76,7 +78,7 @@ class Metrics:
                         self.img_A_paths.append(path)
                     if B_name in file_name:
                         self.img_B_paths.append(path)
-        elif mode == 'parted':
+        elif mode == 'same_dir_parted':
             if os.path.isdir(data_path):
                 list_name = sorted(os.listdir(data_path))
                 for name in list_name:
@@ -88,11 +90,20 @@ class Metrics:
                         for file in os.listdir(os.path.join(data_path, name)):
                             path = os.path.join(data_path, name, file)
                             self.img_B_paths.append(path)
-
             else:
                 print("Please input datafolders's parent directory! ")
+        elif mode == 'diff_dir_parted':
+            if os.path.isdir(A_path) and os.path.isdir(B_path):
+                for file in os.listdir(A_path):
+                    _path = os.path.join(A_path, file)
+                    if filetype.is_image(_path):
+                        self.img_A_paths.append(_path)
+                for file in os.listdir(B_path):
+                    _path = os.path.join(B_path, file)
+                    if filetype.is_image(_path):
+                        self.img_B_paths.append(_path)
         else:
-            print(f"There isn't such %s mode! " % mode)
+            print(f"There isn't such mode named %s! " % mode)
         self.imgs_A = []
         self.imgs_B = []
         self.img_A_paths.sort(key=lambda f: [int(n) for n in re.findall(r"\d+", f)])
@@ -102,6 +113,89 @@ class Metrics:
             self.imgs_A.append(cv.imread(img_A))
         for img_B in self.img_B_paths:
             self.imgs_B.append(cv.imread(img_B))
+
+        # Model init
+        self.loss_fn = lpips.LPIPS(net='alex', pnet_rand=True, model_path="./models/alexnet-owt-7be5be79.pth")
+        if self.use_gpu:
+            self.loss_fn.cuda()
+
+        model_pth = os.path.join(os.getcwd(), 'models/epoch-34.pth')
+        pretrained_path = os.path.join(os.getcwd(), 'models/vgg16-397923af.pth')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.test_transform = transforms.Compose([
+            transforms.Scale(256),
+            transforms.RandomCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
+        base_model = models.vgg16(pretrained=False)
+        base_model.load_state_dict(torch.load(pretrained_path, map_location=self.device))
+        model = NIMA(base_model)
+        try:
+            model.load_state_dict(torch.load(model_pth, map_location=self.device))
+            print('successfully loaded model')
+        except IOError:
+            print("Model doesn't exist! ")
+            raise
+        seed = 42
+        torch.manual_seed(seed)
+        self.model = model.to(self.device)
+        self.model.eval()
+
+    # To Reinitialize Images
+    def __call__(self, mode: str, file_path: str,
+                 A_name: str = '_real_A', B_name: str = '_fake_B',
+                 data_path: str = '',
+                 A_path: str = '', B_path: str = ''):
+        self.img_A_paths = []
+        self.img_B_paths = []
+        self.imgs_A = []
+        self.imgs_B = []
+        if mode == 'mixed':
+            for root, _, file_names in sorted(os.walk(self.result_paths, followlinks=True)):
+                for file_name in file_names:
+                    path = os.path.join(root, file_name)
+                    if A_name in file_name:
+                        self.img_A_paths.append(path)
+                    if B_name in file_name:
+                        self.img_B_paths.append(path)
+        elif mode == 'same_dir_parted':
+            if os.path.isdir(data_path):
+                list_name = sorted(os.listdir(data_path))
+                for name in list_name:
+                    if name == list_name[0]:
+                        for file in os.listdir(os.path.join(data_path, name)):
+                            path = os.path.join(data_path, name, file)
+                            self.img_A_paths.append(path)
+                    elif name == list_name[1]:
+                        for file in os.listdir(os.path.join(data_path, name)):
+                            path = os.path.join(data_path, name, file)
+                            self.img_B_paths.append(path)
+            else:
+                print("Please input datafolders's parent directory! ")
+        elif mode == 'diff_dir_parted':
+            if os.path.isdir(A_path) and os.path.isdir(B_path):
+                for file in os.listdir(A_path):
+                    _path = os.path.join(A_path, file)
+                    if filetype.is_image(_path):
+                        self.img_A_paths.append(_path)
+                for file in os.listdir(B_path):
+                    _path = os.path.join(B_path, file)
+                    if filetype.is_image(_path):
+                        self.img_B_paths.append(_path)
+        else:
+            print(f"There isn't such mode named %s! " % mode)
+        self.img_A_paths.sort(key=lambda f: [int(n) for n in re.findall(r"\d+", f)])
+        self.img_B_paths.sort(key=lambda f: [int(n) for n in re.findall(r"\d+", f)])
+        for img_A in self.img_A_paths:
+            self.imgs_A.append(cv.imread(img_A))
+        for img_B in self.img_B_paths:
+            self.imgs_B.append(cv.imread(img_B))
+        self.result_paths = os.path.join(data_path)
+        self.file_path = os.path.join(file_path)
+
+
 
     def __getitem__(self, item: str):
         i_th = len(os.listdir(self.file_path)) + 1
@@ -155,17 +249,15 @@ class Metrics:
         return np.mean(SSIMs)
 
     def Compute_LPIPS(self):
-        loss_fn = lpips.LPIPS(net='alex', pnet_rand=True, model_path="./models/alexnet-owt-7be5be79.pth")
         LPIPSs = []
-        if self.use_gpu:
-            loss_fn.cuda()
         for img_A_path, img_B_path in zip(self.img_A_paths, self.img_B_paths):
             img_A = lpips.im2tensor(lpips.load_image(img_A_path))
             img_B = lpips.im2tensor(lpips.load_image(img_B_path))
             if self.use_gpu:
                 img_A = img_A.cuda()
                 img_B = img_B.cuda()
-            LPIPSs.append(float(loss_fn(img_A, img_B)))
+            with torch.no_grad():
+                LPIPSs.append(float(self.loss_fn(img_A, img_B)))
         return np.mean(LPIPSs)
 
     # def Compute_LOE(self):
@@ -238,38 +330,15 @@ class Metrics:
         NIMAs = []
         imgs_B_BGR = []
         mean = 0.0
-        test_transform = transforms.Compose([
-            transforms.Scale(256),
-            transforms.RandomCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
-        ])
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model_pth = os.path.join(os.getcwd(), 'models/epoch-34.pth')
-        pretrained_path = os.path.join(os.getcwd(), 'models/vgg16-397923af.pth')
         # test_csv = os.path.join(ROOT_PATH, 'lib/test_labels.csv')
         for img_B in self.imgs_B:
             imgs_B_BGR.append(cv.cvtColor(img_B, cv.COLOR_BGR2RGB))
-        base_model = models.vgg16(pretrained=False)
-        base_model.load_state_dict(torch.load(pretrained_path, map_location=device))
-        model = NIMA(base_model)
-        try:
-            model.load_state_dict(torch.load(model_pth, map_location=device))
-            print('successfully loaded model')
-        except IOError:
-            print("Model doesn't exist! ")
-            raise
-        seed = 42
-        torch.manual_seed(seed)
-        model = model.to(device)
-        model.eval()
         for img_B in self.img_B_paths:
-            imt_B = test_transform(Image.open(img_B))
+            imt_B = self.test_transform(Image.open(img_B))
             imt_B = imt_B.unsqueeze(dim=0)
-            imt_B = imt_B.to(device)
+            imt_B = imt_B.to(self.device)
             with torch.no_grad():
-                out = model(imt_B)
+                out = self.model(imt_B)
             out = out.view(10, 1)
             for j, e in enumerate(out, 1):
                 mean += j * e
