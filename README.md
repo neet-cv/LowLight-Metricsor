@@ -95,6 +95,6 @@ metrics = Metrics(mode='mixed', data_path='/home/joy/ParaPata/', file_path='/hom
 MAE = metrics['MAE']
 print(MAE)
 metrics(mode='same_dir_parted', file_path='/home/joy/ParaPata/Pata/Olah', data_path='/home/joy/ParaPata/yahoo/')
-MSE = metrics['']
+MSE = metrics['MSE']
 ```
 
