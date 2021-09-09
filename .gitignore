@@ -2,4 +2,3 @@
 .git
 __pycache__
 models
-test.py
