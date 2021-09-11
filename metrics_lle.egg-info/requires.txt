@@ -1,0 +1,10 @@
+numpy
+pillow
+scipy
+lpips
+filetype
+opencv-python
+torch
+torchvision
+tqdm
+scikit-image

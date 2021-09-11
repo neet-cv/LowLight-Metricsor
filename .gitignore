@@ -2,7 +2,3 @@
 .git
 __pycache__
 models
-.eggs/
-build/
-dist/
-metrics_lle.egg-info/
